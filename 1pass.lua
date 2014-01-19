@@ -127,6 +127,7 @@ local function build_secret_menuitem_webform(menu, info, secure)
     local username = nil
     local password = nil
     local email = nil
+
     for i,v in ipairs(secure.fields) do
         --print(info.name .. ": " .. v.type .. ", " .. v.value)
         local ignored = false
@@ -220,7 +221,17 @@ local function build_secret_menuitems(info, menu)
         return
     end
 
-    local plaintext = decryptBase64UsingKey(metadata.encrypted, loadKey(metadata.securityLevel, password))
+    local securityLevel = metadata.securityLevel
+    if securityLevel == nil then
+	securityLevel = metadata.openContents.securityLevel
+    end
+    print("title: " .. metadata.title)
+    if securityLevel == nil then
+        --print("can't find security level, assuming SL5" .. metadata.title)
+        securityLevel = "SL5"
+    end
+
+    local plaintext = decryptBase64UsingKey(metadata.encrypted, loadKey(securityLevel, password))
     if plaintext == nil then
         return
     end
@@ -230,6 +241,10 @@ local function build_secret_menuitems(info, menu)
         return
     end
     --dumptable("secure " .. info.name, secure)
+    if secure.fields == nil then
+      print("no secure fields, don't know how to handle this item") 
+      return
+    end
 
     local menuitem = appendGuiMenuItem(menu, info.name)
 
@@ -309,17 +324,21 @@ print("keyhookPressed: running==" .. tostring(keyhookRunning))
 
     for orderi,type in ipairs(passwordTypeOrdering) do
         local bucket = items[type]
-        local realname = passwordTypeNameMap[type]
-        if realname == nil then
-            realname = type
+        if bucket ~= nil then
+            local realname = passwordTypeNameMap[type]
+            if realname == nil then
+                realname = type
+            end
+            local menuitem = appendGuiMenuItem(topmenu, realname)
+            local submenu = makeGuiMenu()
+            table.sort(bucket, function(a, b) return a.name < b.name end)
+            for i,v in pairs(bucket) do
+                build_secret_menuitems(v, submenu)
+            end
+            setGuiMenuItemSubmenu(menuitem, submenu)
+        else
+            print("no bucket found")
         end
-        local menuitem = appendGuiMenuItem(topmenu, realname)
-        local submenu = makeGuiMenu()
-        table.sort(bucket, function(a, b) return a.name < b.name end)
-        for i,v in pairs(bucket) do
-            build_secret_menuitems(v, submenu)
-        end
-        setGuiMenuItemSubmenu(menuitem, submenu)
     end
 
     popupGuiMenu(topmenu)
