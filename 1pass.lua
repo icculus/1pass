@@ -275,7 +275,7 @@ end
 local passwordUnlockTime = nil
 
 function keyhookPressed()  -- not local! Called from C!
-print("keyhookPressed: running==" .. tostring(keyhookRunning))
+--print("keyhookPressed: running==" .. tostring(keyhookRunning))
 --    if keyhookRunning then
 --        return
 --    end
