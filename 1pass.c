@@ -210,6 +210,7 @@ static int runGuiPasswordPrompt(lua_State *L)
 
     gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_MOUSE);
     gtk_widget_show_all(dialog);
+    gtk_window_set_keep_above(GTK_WINDOW(dialog), TRUE);
     const int ok = (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT);
     retvalString(L, ok ? (const char *) gtk_entry_get_text(GTK_ENTRY(entry)) : NULL);
     gtk_widget_destroy(dialog);
