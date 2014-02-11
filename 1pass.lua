@@ -360,7 +360,7 @@ end
 
 -- !!! FIXME: message box, exit if basedir is wack.
 -- !!! FIXME: this can probably happen in C now (the Lua mainline is basically gone now).
---print("Now waiting for keyhook.")
+print("Now waiting for the magic key combo (probably Alt-Meta-\\) ...")
 giveControlToGui()
 
 -- end of 1pass.lua ...
