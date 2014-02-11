@@ -14,6 +14,7 @@ local passwordTypeNameMap = {
     ["wallet.membership.Membership"] = "Memberships",
     ["wallet.government.DriversLicense"] = "Drivers licenses",
     ["system.Tombstone"] = "Dead items",
+    ["securenotes.SecureNote"] = "Secure notes",
     -- !!! FIXME: more!
 }
 
@@ -24,6 +25,7 @@ local passwordTypeOrdering = {
     "wallet.financial.BankAccountUS",
     "wallet.membership.Membership",
     "wallet.government.DriversLicense",
+    "securenotes.SecureNote",
     -- never show "system.Tombstone",
     -- !!! FIXME: more!
 }
@@ -219,6 +221,10 @@ local function build_secret_menuitem_creditcard(menu, info, secure)
 end
 secret_menuitem_builders["wallet.financial.CreditCard"] = build_secret_menuitem_creditcard
 
+local function build_secret_menuitem_securenote(menu, info, secure)
+    build_secret_menuitem(menu, "Notes", secure.notesPlain, true)
+end
+secret_menuitem_builders["securenotes.SecureNote"] = build_secret_menuitem_securenote
 
 local function build_secret_menuitems(info, menu)
     local metadata = load_json(basedir .. "/" .. info.uuid .. ".1password")
