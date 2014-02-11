@@ -128,6 +128,11 @@ local function build_secret_menuitem_webform(menu, info, secure)
     local password = nil
     local email = nil
 
+    if secure.fields == nil then
+      print("no secure fields, don't know how to handle this item") 
+      return
+    end
+
     for i,v in ipairs(secure.fields) do
         --print(info.name .. ": " .. v.type .. ", " .. v.value)
         local ignored = false
@@ -241,10 +246,6 @@ local function build_secret_menuitems(info, menu)
         return
     end
     --dumptable("secure " .. info.name, secure)
-    if secure.fields == nil then
-      print("no secure fields, don't know how to handle this item") 
-      return
-    end
 
     local menuitem = appendGuiMenuItem(menu, info.name)
 
