@@ -289,11 +289,15 @@ function keyhookPressed()  -- not local! Called from C!
 
     keyhookRunning = true
 
+    -- !!! FIXME: this should lose the key in RAM and turn off the Powermate
+    -- !!! FIXME:  LED when the time expires instead of if the time has
+    -- !!! FIXME:  expired when the user is trying to get at the keychain.
     if passwordUnlockTime ~= nil then
         local now = os.time()
         local maxTime = (15 * 60)  -- !!! FIXME: don't hardcode.
         if os.difftime(now, passwordUnlockTime) > maxTime then
             -- lose the existing password and key, prompt user again.
+            setPowermateLED(false)
             password = argv[2]  -- might be nil, don't reset if on command line.
             keys["SL5"] = nil
         end
@@ -314,6 +318,7 @@ function keyhookPressed()  -- not local! Called from C!
             end
         else
             passwordUnlockTime = os.time()
+            setPowermateLED(true)
         end
     end
 
@@ -326,6 +331,7 @@ function keyhookPressed()  -- not local! Called from C!
         keys["SL5"] = nil
         passwordUnlockTime = nil
         keyhookRunning = false
+        setPowermateLED(false)
     end
     appendGuiMenuItem(topmenu, "Lock keychain", lock_callback)
 
@@ -360,6 +366,7 @@ end
 
 -- !!! FIXME: message box, exit if basedir is wack.
 -- !!! FIXME: this can probably happen in C now (the Lua mainline is basically gone now).
+setPowermateLED(false)  -- off by default
 print("Now waiting for the magic key combo (probably Alt-Meta-\\) ...")
 giveControlToGui()
 

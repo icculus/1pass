@@ -1,7 +1,12 @@
+#include <linux/input.h>
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <errno.h>
+#include <unistd.h>
+
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
@@ -13,6 +18,87 @@
 #include <gtk/gtk.h>
 
 #define STATICARRAYLEN(x) ( (sizeof ((x))) / (sizeof ((x)[0])) )
+
+// plug in a Griffin Powermate, make sure you have access to it, and run with
+//  --powermate=/dev/input/eventX
+static int powermate_fd = -1;
+static int pumpPowermate(void)
+{
+    struct input_event buf[32];
+    int pressed = 0;
+    ssize_t br;
+
+    if (powermate_fd == -1)
+        return 0;  // nothing to do.
+
+    while ((br = read(powermate_fd, buf, sizeof (buf))) > 0)
+    {
+        ssize_t i;
+        br /= sizeof (buf[0]);
+        for (i = 0; i < br; i++)
+        {
+            struct input_event *ev = &buf[i];
+            if ((ev->type == EV_KEY) && (ev->code == BTN_0) && (ev->value))
+                pressed = 1;
+        } // for
+    } // while
+
+    return pressed;
+}
+
+static void setPowermateLED(const int enable)
+{
+    struct input_event ev;
+    const int brightness = enable ? 255 : 0;
+    const int pulse_speed = 255;
+    const int pulse_table = 0;
+    const int pulse_awake = enable ? 1 : 0;
+    const int pulse_asleep = 0;
+
+    if (powermate_fd == -1)
+        return;
+
+    memset(&ev, '\0', sizeof (ev));
+    ev.type = EV_MSC;
+    ev.code = MSC_PULSELED;
+    ev.value = brightness | (pulse_speed << 8) | (pulse_table << 17) | (pulse_asleep << 19) | (pulse_awake << 20);
+
+    if (write(powermate_fd, &ev, sizeof (ev)) != sizeof (ev))
+        fprintf(stderr, "WARNING: tried to set Powermate LED and failed: %s\n", strerror(errno));
+} // setPowermateLED
+
+
+static void initPowermate(int *_argc, char **argv)
+{
+    const char *arg = "--powermate=";
+    const size_t arglen = strlen(arg);
+    int argc = *_argc;
+    int i;
+
+    for (i = 1; i < argc; i++)
+    {
+        const char *thisarg = argv[i];
+        if (strncmp(thisarg, arg, arglen) != 0)
+            continue;
+
+        thisarg += arglen;
+        powermate_fd = open(thisarg, O_RDWR);
+        if (powermate_fd == -1)
+            fprintf(stderr, "WARNING: couldn't open Powermate at %s: %s\n", thisarg, strerror(errno));
+        else
+        {
+            const int flags = fcntl(powermate_fd, F_GETFL, 0) | O_NONBLOCK;
+            fcntl(powermate_fd, F_SETFL, flags);
+        } // else
+
+        // eliminate this command line.
+        memmove(&argv[i], &argv[i+1], (argc-i) * sizeof (char *));
+        argc--;
+    } // for
+
+    *_argc = argc;
+} // initPowermate
+
 
 static lua_State *luaState = NULL;
 static const uint8_t zero16[16] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
@@ -289,6 +375,14 @@ static int popupGuiMenu(lua_State *L)
 } // popupGuiMenu
 
 
+static int setPowermateLED_Lua(lua_State *L)
+{
+    const int enable = lua_toboolean(L, 1);
+    setPowermateLED(enable);
+    return 0;
+} // setPowermateLED_Lua
+
+
 static void keyhookPressed(void)
 {
     lua_getglobal(luaState, "keyhookPressed");
@@ -300,6 +394,9 @@ static gboolean keyhookPumper(void *arg)
 {
     if (pumpKeyHook())
         keyhookPressed();
+    else if (pumpPowermate())
+        keyhookPressed();
+
     return TRUE;  // keep firing timer
 } // keyhookPumper
 
@@ -375,15 +472,21 @@ static int initLua(const int argc, char **argv)
     luaSetCFunc(luaState, giveControlToGui, "giveControlToGui");
     luaSetCFunc(luaState, runGuiPasswordPrompt, "runGuiPasswordPrompt");
     luaSetCFunc(luaState, copyToClipboard, "copyToClipboard");
+    luaSetCFunc(luaState, setPowermateLED_Lua, "setPowermateLED");
 
     // Set up argv table...
     lua_newtable(luaState);
     int i;
+    int luai = 1;
     for (i = 0; i < argc; i++)
     {
-        lua_pushinteger(luaState, i+1);
-        lua_pushstring(luaState, argv[i]);
-        lua_settable(luaState, -3);
+        if (argv[i])
+        {
+            lua_pushinteger(luaState, luai);
+            lua_pushstring(luaState, argv[i]);
+            lua_settable(luaState, -3);
+            luai++;
+        } // if
     } // for
     lua_setglobal(luaState, "argv");
 
@@ -397,6 +500,7 @@ static int initLua(const int argc, char **argv)
 
 int main(int argc, char **argv)
 {
+    initPowermate(&argc, argv);
     gtk_init(&argc, &argv);
 
     if (!initLua(argc, argv))  // this will move control to 1pass.lua
