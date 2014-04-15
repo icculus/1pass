@@ -390,8 +390,16 @@ static void keyhookPressed(void)
 } // keyhookPressed
 
 
+static int pumpLua(void)
+{
+    lua_getglobal(luaState, "pumpLua");
+    lua_call(luaState, 0, 0);
+} // pumpLua
+
+
 static gboolean keyhookPumper(void *arg)
 {
+    pumpLua();
     if (pumpKeyHook())
         keyhookPressed();
     else if (pumpPowermate())

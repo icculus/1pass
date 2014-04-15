@@ -281,14 +281,17 @@ end
 
 local passwordUnlockTime = nil
 
-function keyhookPressed()  -- not local! Called from C!
---print("keyhookPressed: running==" .. tostring(keyhookRunning))
---    if keyhookRunning then
---        return
---    end
+local function lockKeychain()
+    -- lose the existing password and key, prompt user again.
+    password = argv[2]  -- might be nil, don't reset if on command line.
+    keys["SL5"] = nil
+    passwordUnlockTime = nil
+    keyhookRunning = false
+    setPowermateLED(false)
+    collectgarbage()
+end
 
-    keyhookRunning = true
-
+function pumpLua()  -- not local! Called from C!
     -- !!! FIXME: this should lose the key in RAM and turn off the Powermate
     -- !!! FIXME:  LED when the time expires instead of if the time has
     -- !!! FIXME:  expired when the user is trying to get at the keychain.
@@ -296,12 +299,19 @@ function keyhookPressed()  -- not local! Called from C!
         local now = os.time()
         local maxTime = (15 * 60)  -- !!! FIXME: don't hardcode.
         if os.difftime(now, passwordUnlockTime) > maxTime then
-            -- lose the existing password and key, prompt user again.
-            setPowermateLED(false)
-            password = argv[2]  -- might be nil, don't reset if on command line.
-            keys["SL5"] = nil
+            lockKeychain()
         end
     end
+end
+
+
+function keyhookPressed()  -- not local! Called from C!
+--print("keyhookPressed: running==" .. tostring(keyhookRunning))
+--    if keyhookRunning then
+--        return
+--    end
+
+    keyhookRunning = true
 
     while password == nil do
         password = runGuiPasswordPrompt(getHint())
@@ -326,14 +336,7 @@ function keyhookPressed()  -- not local! Called from C!
 
     local topmenu = makeGuiMenu()
 
-    local lock_callback = function()
-        password = argv[2]  -- might be nil, don't reset if on command line.
-        keys["SL5"] = nil
-        passwordUnlockTime = nil
-        keyhookRunning = false
-        setPowermateLED(false)
-    end
-    appendGuiMenuItem(topmenu, "Lock keychain", lock_callback)
+    appendGuiMenuItem(topmenu, "Lock keychain", function() lockKeychain() end)
 
     for orderi,type in ipairs(passwordTypeOrdering) do
         local bucket = items[type]
