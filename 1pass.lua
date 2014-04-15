@@ -236,7 +236,7 @@ local function build_secret_menuitems(info, menu)
     if securityLevel == nil then
 	securityLevel = metadata.openContents.securityLevel
     end
-    print("title: " .. metadata.title)
+    --print("title: " .. metadata.title)
     if securityLevel == nil then
         --print("can't find security level, assuming SL5" .. metadata.title)
         securityLevel = "SL5"
