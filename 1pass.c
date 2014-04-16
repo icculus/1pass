@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <unistd.h>
+#include <dirent.h>
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -68,6 +69,58 @@ static void setPowermateLED(const int enable)
 } // setPowermateLED
 
 
+static int openPowermate(const char *fname)
+{
+    static const char const *known_names[] = {
+        "Griffin PowerMate", "Griffin SoundKnob"
+    };
+
+    char buf[255];
+    int ok = 0;
+    int fd;
+    int i;
+
+    if (!fname)
+        return -1;
+
+    if ((fd = open(fname, O_RDWR)) == -1)
+        fprintf(stderr, "WARNING: couldn't open Powermate at %s: %s\n", fname, strerror(errno));
+
+    if (ioctl(fd, EVIOCGNAME(sizeof (buf)), buf) == -1)
+    {
+        fprintf(stderr, "EVIOCGNAME failed for %s: %s\n", fname, strerror(errno));
+        close(fd);
+        return -1;
+    } // if
+
+    for (i = 0; !ok && (i < sizeof (known_names) / sizeof (known_names[0])); i++)
+    {
+        if (strncmp(buf, known_names[i], strlen(known_names[i])) == 0)
+            ok = 1;
+    } // for
+
+    if (!ok)
+    {
+        close(fd);
+        return -1;
+    } // if
+
+    fcntl(fd, F_SETFL, fcntl(fd, F_GETFL, 0) | O_NONBLOCK);
+    return fd;
+} // openPowermate
+
+
+static void deinitPowermate(void)
+{
+    if (powermate_fd == -1)
+    {
+        setPowermateLED(0);
+        close(powermate_fd);
+        powermate_fd = -1;
+    } // if
+} // deinitPowermate
+
+
 static void initPowermate(int *_argc, char **argv)
 {
     const char *arg = "--powermate=";
@@ -82,19 +135,45 @@ static void initPowermate(int *_argc, char **argv)
             continue;
 
         thisarg += arglen;
-        powermate_fd = open(thisarg, O_RDWR);
-        if (powermate_fd == -1)
-            fprintf(stderr, "WARNING: couldn't open Powermate at %s: %s\n", thisarg, strerror(errno));
-        else
+
+        if (strcmp(thisarg, "auto") == 0)
         {
-            const int flags = fcntl(powermate_fd, F_GETFL, 0) | O_NONBLOCK;
-            fcntl(powermate_fd, F_SETFL, flags);
-        } // else
+            DIR *dirp = opendir("/dev/input");
+            if (dirp)
+            {
+                struct dirent *dent;
+                while ((dent = readdir(dirp)) != NULL)
+                {
+                    const char *name = dent->d_name;
+                    char buf[PATH_MAX];
+                    if (strncmp(name, "event", 5) != 0)
+                        continue;
+                    snprintf(buf, sizeof (buf), "/dev/input/%s", name);
+                    if (powermate_fd == -1)
+                    {
+                        powermate_fd = openPowermate(buf);
+                        if (powermate_fd != -1)
+                        {
+                            printf("Found Powermate at %s\n", buf);
+                            break;
+                        } // if
+                    } // if
+                } // while
+                closedir(dirp);
+            } // if
+            thisarg = NULL;
+
+        } // if
 
         // eliminate this command line.
         memmove(&argv[i], &argv[i+1], (argc-i) * sizeof (char *));
         argc--;
+
+        if (powermate_fd == -1)
+            powermate_fd = openPowermate(thisarg);
     } // for
+
+    atexit(deinitPowermate);
 
     *_argc = argc;
 } // initPowermate
