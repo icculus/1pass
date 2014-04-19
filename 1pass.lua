@@ -128,6 +128,8 @@ local function build_secret_menuitem_webform(menu, info, secure)
     local addthis = false
     local username = nil
     local password = nil
+    local designated_password = nil
+    local designated_username = nil
     local email = nil
 
     if secure.fields == nil then
@@ -138,11 +140,17 @@ local function build_secret_menuitem_webform(menu, info, secure)
     for i,v in ipairs(secure.fields) do
         --print(info.name .. ": " .. v.type .. ", " .. v.value)
         local ignored = false
-        if (v.type == "P") and (password == nil) and (v.value ~= "") then
+        if (v.value == nil) or (v.value == "") then
+            ignored = true
+        elseif (v.designation ~= nil) and (v.designation == "password") then
+            designated_password = v.value
+        elseif (v.designation ~= nil) and (v.designation == "username") then
+            designated_username = v.value
+        elseif (v.type == "P") then
             password = v.value
-        elseif (v.type == "T") and (usenname == nil) and (v.value ~= "") then
+        elseif (v.type == "T") then
             username = v.value
-        elseif (v.type == "E") and (email == nil) and (v.value ~= "") then
+        elseif (v.type == "E") then
             email = v.value
         else
             ignored = true
@@ -154,6 +162,15 @@ local function build_secret_menuitem_webform(menu, info, secure)
     end
 
     if addthis then
+        -- designated fields always win out.
+        if (designated_username ~= nil) then
+            username = designated_username
+        end
+
+        if (designated_password ~= nil) then
+            password = designated_password
+        end
+
         if (username ~= nil) and (email ~= nil) and (email == username) then
             email = nil
         end
