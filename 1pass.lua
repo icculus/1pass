@@ -252,7 +252,7 @@ local function build_secret_menuitems(info, menu)
 
     local securityLevel = metadata.securityLevel
     if securityLevel == nil then
-	securityLevel = metadata.openContents.securityLevel
+        securityLevel = metadata.openContents.securityLevel
     end
     --print("title: " .. metadata.title)
     if securityLevel == nil then
