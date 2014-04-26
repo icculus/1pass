@@ -380,7 +380,7 @@ function keyhookPressed()  -- not local! Called from C!
             end
             setGuiMenuItemSubmenu(menuitem, submenu)
         else
-            print("no bucket found")
+            --print("no bucket found for item type '" .. type .. "'")
         end
     end
     
