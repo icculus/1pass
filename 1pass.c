@@ -113,7 +113,7 @@ static int openPowermate(const char *fname)
 
 static void deinitPowermate(void)
 {
-    if (powermate_fd == -1)
+    if (powermate_fd != -1)
     {
         setPowermateLED(0);
         close(powermate_fd);
