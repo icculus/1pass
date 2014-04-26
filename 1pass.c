@@ -7,6 +7,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <signal.h>
 
 #include "lua.h"
 #include "lauxlib.h"
@@ -585,8 +586,46 @@ static int initLua(const int argc, char **argv)
 } // initLua
 
 
+static void deinitAll()
+{
+    deinitPowermate();
+    deinitKeyHook();
+    deinitLua();
+} // deinitAll
+
+
+static void killerSignalCatcher(int sig)
+{
+    static int been_run = 0;
+    if (been_run)
+    {
+        fprintf(stderr, "Caught signal %d, terminating HARD.\n", sig);
+        _exit(0);
+    } // if
+
+    been_run = 1;
+    fprintf(stderr, "Caught signal %d, terminating.\n", sig);
+    exit(0);  // trigger atexit handlers.
+} // killerSignalCatcher
+
+
+static void initSignals(void)
+{
+    signal(SIGINT, killerSignalCatcher);
+    signal(SIGQUIT, killerSignalCatcher);
+    signal(SIGILL, killerSignalCatcher);
+    signal(SIGFPE, killerSignalCatcher);
+    signal(SIGTERM, killerSignalCatcher);
+    signal(SIGPIPE, killerSignalCatcher);
+    signal(SIGSEGV, killerSignalCatcher);
+    signal(SIGABRT, killerSignalCatcher);
+    signal(SIGHUP, killerSignalCatcher);
+} // initSignals
+
+
 int main(int argc, char **argv)
 {
+    initSignals();
     initPowermate(&argc, argv);
     gtk_init(&argc, &argv);
 
