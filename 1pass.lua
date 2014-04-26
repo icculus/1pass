@@ -4,6 +4,7 @@ dofile("dumptable.lua")
 local basedir = "1Password/1Password.agilekeychain/data/default"  -- !!! FIXME
 local password = argv[2]
 local items = nil
+local faveitems = nil
 local keyhookRunning = false
 
 local passwordTypeNameMap = {
@@ -278,6 +279,11 @@ local function build_secret_menuitems(info, menu)
         return
     end
 
+    if metadata.faveIndex ~= nil then
+        --dumptable("fave metadata " .. info.name, metadata)
+        faveitems[metadata.faveIndex] = { info=info, secure=secure }
+    end
+
     local submenu = makeGuiMenu()
     secret_menuitem_builders[info.type](submenu, info, secure)
     setGuiMenuItemSubmenu(menuitem, submenu)
@@ -352,6 +358,10 @@ function keyhookPressed()  -- not local! Called from C!
     prepItems()
 
     local topmenu = makeGuiMenu()
+    local favesmenu = makeGuiMenu()
+    faveitems = {}
+
+    setGuiMenuItemSubmenu(appendGuiMenuItem(topmenu, "Favorites"), favesmenu)
 
     appendGuiMenuItem(topmenu, "Lock keychain", function() lockKeychain() end)
 
@@ -373,6 +383,34 @@ function keyhookPressed()  -- not local! Called from C!
             print("no bucket found")
         end
     end
+    
+    -- This favepairs stuff is obnoxious.
+    local function favepairs(t)
+        local a = {}
+        for n in pairs(t) do table.insert(a, n) end
+        table.sort(a)
+        local i = 0
+        local iter = function()
+            i = i + 1
+            if a[i] == nil then
+                return nil
+            else
+                return a[i], t[a[i]]
+            end
+        end
+        return iter
+    end
+
+    for i,v in favepairs(faveitems) do
+        --dumptable("fave " .. i, v)
+        local menuitem = appendGuiMenuItem(favesmenu, v.info.name)
+        local submenu = makeGuiMenu()
+        secret_menuitem_builders[v.info.type](submenu, v.info, v.secure)
+        setGuiMenuItemSubmenu(menuitem, submenu)
+    end
+
+    favepairs = nil
+    faveitems = nil
 
     popupGuiMenu(topmenu)
 end
