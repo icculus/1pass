@@ -233,7 +233,7 @@ local function build_secret_menuitem_creditcard(menu, info, secure)
     build_secret_menuitem(menu, "Type", secure.type)
     build_secret_menuitem(menu, "CC number", secure.ccnum, true)
     build_secret_menuitem(menu, "CVV", secure.cvv, true)
-    build_secret_menuitem(menu, "Expires", secure.expirydate)
+    build_secret_menuitem(menu, "Expires", expiredate)
     build_secret_menuitem(menu, "Card holder", secure.cardholder)
     build_secret_menuitem(menu, "Bank", secure.bank)
 end
