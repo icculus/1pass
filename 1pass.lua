@@ -246,7 +246,7 @@ secret_menuitem_builders["securenotes.SecureNote"] = build_secret_menuitem_secur
 
 local function build_secret_menuitems(info, menu)
     local metadata = load_json(basedir .. "/" .. info.uuid .. ".1password")
-    if metadata == nil then
+    if (metadata == nil) or (next(metadata) == nil) then  -- the "next" trick tests if table is empty.
         return
     end
 
