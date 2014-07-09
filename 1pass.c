@@ -623,8 +623,62 @@ static void initSignals(void)
 } // initSignals
 
 
+// this was from PhysicsFS ( https://icculus.org/physfs/ ), zlib license.
+static char *readSymLink(const char *path)
+{
+    ssize_t len = 64;
+    ssize_t rc = -1;
+    char *retval = NULL;
+
+    while (1)
+    {
+         char *ptr = (char *) realloc(retval, (size_t) len);
+         if (ptr == NULL)
+             break;   // out of memory.
+         retval = ptr;
+
+         rc = readlink(path, retval, len);
+         if (rc == -1)
+             break;  // not a symlink, i/o error, etc.
+
+         else if (rc < len)
+         {
+             retval[rc] = '\0';  // readlink doesn't null-terminate.
+             return retval;  // we're good to go.
+         } // else if
+
+         len *= 2;  // grow buffer, try again.
+    } // while
+
+    if (retval != NULL)
+        free(retval);
+    return NULL;
+} // readSymLink
+
+
+static void chdirToApp(void)
+{
+    char *ptr;
+    char *path = readSymLink("/proc/self/exe");
+    
+    if (path == NULL)
+        return;  // maybe we're already there, fail later if not.
+
+    ptr = strrchr(path, '/');
+    if (ptr != NULL)
+    {
+        *ptr = '\0';
+        if (chdir(path) == -1)
+            fprintf(stderr, "Couldn't chdir() to app directory?! %s\n", strerror(errno));
+    } // if
+
+    free(path);
+} // chdirToApp
+
+
 int main(int argc, char **argv)
 {
+    chdirToApp();
     initSignals();
     initPowermate(&argc, argv);
     gtk_init(&argc, &argv);
