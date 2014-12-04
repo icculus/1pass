@@ -197,6 +197,8 @@ local function build_secret_menuitem_bankacctus(menu, info, secure)
     build_secret_menuitem(menu, "Account number", secure.accountNo)
     build_secret_menuitem(menu, "Bank name", secure.bankName)
     build_secret_menuitem(menu, "Owner", secure.owner)
+    build_secret_menuitem(menu, "SWIFT code", secure.swift)
+    build_secret_menuitem(menu, "PIN", secure.telephonePin)
 end
 secret_menuitem_builders["wallet.financial.BankAccountUS"] = build_secret_menuitem_bankacctus
 
