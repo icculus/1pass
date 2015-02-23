@@ -204,9 +204,30 @@ secret_menuitem_builders["wallet.financial.BankAccountUS"] = build_secret_menuit
 
 
 local function build_secret_menuitem_driverslic(menu, info, secure)
-    -- !!! FIXME: there's more data than this in a generic dictionary.
-    local birthdate = secure.birthdate_yy .. "/" .. string.sub("00" .. secure.birthdate_mm, -2) .. "/" .. string.sub("00" .. secure.birthdate_dd, -2)
+    -- !!! FIXME: there's more data for this menuitem than this, in a generic dictionary.
+
+    local birthdate = nil
+    if secure.birthdate_yy ~= nil then
+        birthdate = secure.birthdate_yy
+        if secure.birthdate_mm ~= nil then
+            birthdate = birthdate .. "/" .. string.sub("00" .. secure.birthdate_mm, -2)
+            if secure.birthdate_dd ~= nil then
+                birthdate = birthdate .. "/" .. string.sub("00" .. secure.birthdate_dd, -2)
+            end
+        end
+    end
+
     local expiredate = secure.expiry_date_yy .. "/" .. string.sub("00" .. secure.expiry_date_mm, -2)
+    if secure.expiry_date_yy ~= nil then
+        expiredate = secure.expiry_date_yy
+        if secure.expiry_date_mm ~= nil then
+            expiredate = expiredate .. "/" .. string.sub("00" .. secure.expiry_date_mm, -2)
+            if secure.expiry_date_dd ~= nil then
+                expiredate = expiredate .. "/" .. string.sub("00" .. secure.expiry_date_dd, -2)
+            end
+        end
+    end
+
     build_secret_menuitem(menu, "License number", secure.number)
     build_secret_menuitem(menu, "Class", secure.class)
     build_secret_menuitem(menu, "Expires", expiredate)
