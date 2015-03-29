@@ -217,7 +217,7 @@ local function build_secret_menuitem_driverslic(menu, info, secure)
         end
     end
 
-    local expiredate = secure.expiry_date_yy .. "/" .. string.sub("00" .. secure.expiry_date_mm, -2)
+    local expiredate = nil
     if secure.expiry_date_yy ~= nil then
         expiredate = secure.expiry_date_yy
         if secure.expiry_date_mm ~= nil then
