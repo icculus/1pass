@@ -315,6 +315,9 @@ end
 local function prepItems()
     items = {}
     local contents = loadContents()
+    if contents == nil then
+        return false
+    end
     for i,v in ipairs(contents) do
         local t = v[2]
         if items[t] == nil then
@@ -323,6 +326,7 @@ local function prepItems()
         local bucket = items[t]
         bucket[#bucket+1] = { uuid=v[1], type=t, name=v[3], url=v[4] }  -- !!! FIXME: there are more fields, don't know what they mean yet.
     end
+    return true
 end
 
 local passwordUnlockTime = nil
@@ -378,7 +382,10 @@ function keyhookPressed()  -- not local! Called from C!
         end
     end
 
-    prepItems()
+    if not prepItems() then
+        keyhookRunning = false
+        return
+    end
 
     local topmenu = makeGuiMenu()
     local favesmenu = makeGuiMenu()
@@ -446,6 +453,16 @@ end
 --end
 
 -- !!! FIXME: message box, exit if basedir is wack.
+local f = io.open(basedir .. "/contents.js", "rb")
+if f == nil then
+    print("ERROR: Couldn't read your 1Password keychain in '" .. basedir .. "'.")
+    print("ERROR: Please make sure it exists and you have permission to access it.")
+    print("ERROR: (maybe you need to run 'ln -s ~/Dropbox/1Password' here?")
+    print("ERROR: Giving up for now.")
+    os.exit(1)
+end
+f:close()
+
 -- !!! FIXME: this can probably happen in C now (the Lua mainline is basically gone now).
 setPowermateLED(false)  -- off by default
 print("Now waiting for the magic key combo (probably Alt-Meta-\\) ...")
