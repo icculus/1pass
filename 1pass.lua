@@ -6,6 +6,16 @@ local password = argv[2]
 local items = nil
 local faveitems = nil
 local keyhookRunning = false
+local keyhookGuiMenus = nil
+
+
+local function runGarbageCollector()
+    --local memused = math.floor(collectgarbage("count") * 1024.0)
+    --print("Collecting garbage (currently using " .. memused .. " bytes).")
+    collectgarbage()
+    --local newmemused = math.floor(collectgarbage("count") * 1024.0)
+    --print("Now using " .. newmemused .. " bytes (" .. memused - newmemused .. " bytes savings).")
+end
 
 local passwordTypeNameMap = {
     ["webforms.WebForm"] = "Logins",
@@ -103,6 +113,26 @@ local function loadContents()
     return load_json(basedir .. "/contents.js")
 end
 
+local function makeMenu()
+    return {}
+end
+
+local function appendMenuItem(menu, text, callback)
+    local item = {}
+    item["text"] = text
+    if callback ~= nil then
+        item["callback"] = callback
+    end
+    menu[#menu+1] = item
+    return item
+end
+
+local function setMenuItemSubmenu(menuitem, submenu)
+    menuitem["submenu"] = submenu
+end
+
+
+
 local function build_secret_menuitem(menu, type, str, hidden)
     if str == nil then
         return nil
@@ -117,9 +147,9 @@ local function build_secret_menuitem(menu, type, str, hidden)
     local callback = function()
         copyToClipboard(str)
         --print("Copied data [" .. str .. "] to clipboard.")
-        keyhookRunning = false
+        guiDestroyMenu(keyhookGuiMenus[1])
     end
-    return appendGuiMenuItem(menu, text, callback)
+    return appendMenuItem(menu, text, callback)
 end
 
 
@@ -294,7 +324,7 @@ local function build_secret_menuitems(info, menu)
     end
     --dumptable("secure " .. info.name, secure)
 
-    local menuitem = appendGuiMenuItem(menu, info.name)
+    local menuitem = appendMenuItem(menu, info.name)
 
     if secret_menuitem_builders[info.type] == nil then
         print("WARNING: don't know how to handle items of type " .. info.type)
@@ -307,9 +337,9 @@ local function build_secret_menuitems(info, menu)
         faveitems[metadata.faveIndex] = { info=info, secure=secure }
     end
 
-    local submenu = makeGuiMenu()
+    local submenu = makeMenu()
     secret_menuitem_builders[info.type](submenu, info, secure)
-    setGuiMenuItemSubmenu(menuitem, submenu)
+    setMenuItemSubmenu(menuitem, submenu)
 end
 
 local function prepItems()
@@ -336,9 +366,12 @@ local function lockKeychain()
     password = argv[2]  -- might be nil, don't reset if on command line.
     keys["SL5"] = nil
     passwordUnlockTime = nil
-    keyhookRunning = false
     setPowermateLED(false)
-    collectgarbage()
+
+    -- kill the popup if it exists.
+    if (keyhookGuiMenus ~= nil) and (keyhookGuiMenus[1] ~= nil) then
+        guiDestroyMenu(keyhookGuiMenus[1])
+    end
 end
 
 function pumpLua()  -- not local! Called from C!
@@ -354,12 +387,118 @@ function pumpLua()  -- not local! Called from C!
     end
 end
 
+function escapePressed()  -- not local! Called from C!
+    if keyhookGuiMenus[1] then
+        guiDestroyMenu(keyhookGuiMenus[1])
+    end
+end
+
+
+local buildGuiMenuList
+
+local function spawnSubMenu(button, submenu, depth)
+    local guimenu = guiCreateSubMenu(button)
+
+    for i = #keyhookGuiMenus, depth, -1 do
+        if keyhookGuiMenus[i] then
+            --print("Destroying conflicting submenu at depth " .. i)
+            guiDestroyMenu(keyhookGuiMenus[i])
+            keyhookGuiMenus[i] = nil
+        end
+    end
+
+    --print("New submenu at depth " .. depth)
+    keyhookGuiMenus[depth] = guimenu
+
+    buildGuiMenuList(guimenu, submenu)
+    guiShowWindow(guimenu)
+end
+
+local function buildGuiMenuItem(guimenu, item)
+    local cb = item["callback"]
+    if cb == nil then
+        local submenu = item["submenu"]
+        local depth = #keyhookGuiMenus+1
+        cb = function (button)
+            return spawnSubMenu(button, submenu, depth)
+        end
+    end
+    guiAddMenuItem(guimenu, item["text"], cb)
+end
+
+buildGuiMenuList = function(guimenu, list)
+    for i,v in ipairs(list) do
+        buildGuiMenuItem(guimenu, v)
+    end
+end
+
+local function buildSearchResultsMenuCategory(guimenu, menu, str)
+    local submenu = menu["submenu"]
+    if not submenu then return end
+
+    local name = menu["text"]
+    -- !!! FIXME: hacky. We should really list favorites first anyhow.
+    if name == "Favorites" then return end
+
+    for i,v in ipairs(submenu) do
+        if string.find(string.lower(v["text"]), str, 1, true) ~= nil then
+            buildGuiMenuItem(guimenu, v)
+        end
+    end
+end
+
+local function buildSearchResultsMenuList(guimenu, topmenu, str)
+    for i,v in ipairs(topmenu) do
+        buildSearchResultsMenuCategory(guimenu, v, str)
+    end
+end
+
+local function searchEntryChanged(guimenu, str, topmenu)
+    --print("search changed to '" .. str .. "' ...")
+    guiRemoveAllMenuItems(guimenu)
+    if str == "" then
+        buildGuiMenuList(guimenu, topmenu)
+    else
+        buildSearchResultsMenuList(guimenu, topmenu, string.lower(str))
+    end
+    guiShowWindow(guimenu)
+end
+
+local function handleMenuDestroyed()
+    --print("Destroying main menu...")
+    for i,v in ipairs(keyhookGuiMenus) do
+        if i > 1 then
+            guiDestroyMenu(v)
+        end
+    end
+    keyhookGuiMenus = nil
+    keyhookRunning = false
+
+    runGarbageCollector()
+end
+
+local function launchGuiMenu(topmenu)
+    local guimenu = guiCreateTopLevelMenu("1pass",
+
+        function(guimenu, str) -- search text changed callback
+            return searchEntryChanged(guimenu, str, topmenu)
+        end,
+
+        function()  -- window destroyed callback
+            handleMenuDestroyed()
+        end
+    )
+    keyhookGuiMenus = {}
+    keyhookGuiMenus[#keyhookGuiMenus+1] = guimenu
+    buildGuiMenuList(guimenu, topmenu)
+    guiShowWindow(guimenu)
+end
 
 function keyhookPressed()  -- not local! Called from C!
---print("keyhookPressed: running==" .. tostring(keyhookRunning))
---    if keyhookRunning then
---        return
---    end
+    --print("keyhookPressed: running==" .. tostring(keyhookRunning))
+    if keyhookRunning then
+        return
+    end
 
     keyhookRunning = true
 
@@ -387,13 +526,13 @@ function keyhookPressed()  -- not local! Called from C!
         return
     end
 
-    local topmenu = makeGuiMenu()
-    local favesmenu = makeGuiMenu()
+    local topmenu = makeMenu()
+    local favesmenu = makeMenu()
     faveitems = {}
 
-    setGuiMenuItemSubmenu(appendGuiMenuItem(topmenu, "Favorites"), favesmenu)
+    setMenuItemSubmenu(appendMenuItem(topmenu, "Favorites"), favesmenu)
 
-    appendGuiMenuItem(topmenu, "Lock keychain", function() lockKeychain() end)
+    appendMenuItem(topmenu, "Lock keychain", function() lockKeychain() end)
 
     for orderi,type in ipairs(passwordTypeOrdering) do
         local bucket = items[type]
@@ -402,13 +541,13 @@ function keyhookPressed()  -- not local! Called from C!
             if realname == nil then
                 realname = type
             end
-            local menuitem = appendGuiMenuItem(topmenu, realname)
-            local submenu = makeGuiMenu()
+            local menuitem = appendMenuItem(topmenu, realname)
+            local submenu = makeMenu()
             table.sort(bucket, function(a, b) return a.name < b.name end)
             for i,v in pairs(bucket) do
                 build_secret_menuitems(v, submenu)
             end
-            setGuiMenuItemSubmenu(menuitem, submenu)
+            setMenuItemSubmenu(menuitem, submenu)
         else
             --print("no bucket found for item type '" .. type .. "'")
         end
@@ -433,16 +572,16 @@ function keyhookPressed()  -- not local! Called from C!
 
     for i,v in favepairs(faveitems) do
         --dumptable("fave " .. i, v)
-        local menuitem = appendGuiMenuItem(favesmenu, v.info.name)
-        local submenu = makeGuiMenu()
+        local menuitem = appendMenuItem(favesmenu, v.info.name)
+        local submenu = makeMenu()
         secret_menuitem_builders[v.info.type](submenu, v.info, v.secure)
-        setGuiMenuItemSubmenu(menuitem, submenu)
+        setMenuItemSubmenu(menuitem, submenu)
     end
 
     favepairs = nil
     faveitems = nil
 
-    popupGuiMenu(topmenu)
+    launchGuiMenu(topmenu)
 end
 
 

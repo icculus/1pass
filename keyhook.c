@@ -1,6 +1,8 @@
 // !!! FIXME: this is X11 specific.  :(
 
 #include <stdio.h>
+
+#if 1
 #include <stdlib.h>
 #include <string.h>
 #include <pthread.h>
@@ -129,6 +131,22 @@ int pumpKeyHook(void)
     XRecordProcessReplies(datadpy);
     return sawKeyCombo;
 } // pumpKeyHook
+
+#else
+
+int initKeyHook(void) { return 1; }
+void deinitKeyHook(void) {}
+
+int pumpKeyHook(void)
+{
+static int x = 50;
+const int retval = (x == 50);
+if (++x > 50) x = 0;
+if (retval) printf("fire it!\n");
+return retval;
+}
+
+#endif
 
 // end of keyhook.c ...
 

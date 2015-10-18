@@ -17,7 +17,13 @@
 #include "base64.h"
 #include "md5.h"
 #include "keyhook.h"
+
 #include <gtk/gtk.h>
+#include <gdk/gdk.h>
+#include <gdk/gdkx.h>
+#include <gdk/gdkkeysyms.h>
+#include <X11/Xlib.h>
+#include <X11/Xlibint.h>
 
 #define STATICARRAYLEN(x) ( (sizeof ((x))) / (sizeof ((x)[0])) )
 
@@ -183,6 +189,13 @@ static void initPowermate(int *_argc, char **argv)
 static lua_State *luaState = NULL;
 static const uint8_t zero16[16] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
 static const char saltprefix[] = { 'S', 'a', 'l', 't', 'e', 'd', '_', '_' };
+
+static int makeLuaCallback(lua_State *L, const int idx)
+{
+    assert(lua_isfunction(L, idx));
+    lua_pushvalue(L, idx);  // copy the Lua callback (luaL_ref() pops it).
+    return luaL_ref(L, LUA_REGISTRYINDEX);
+} // makeLuaCallback
 
 static inline int retvalStringBytes(lua_State *L, const uint8_t *str, size_t len)
 {
@@ -375,6 +388,9 @@ static int runGuiPasswordPrompt(lua_State *L)
     gtk_container_add(GTK_CONTAINER(content_area), entry);
 
     gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_MOUSE);
+    gtk_window_set_keep_above(GTK_WINDOW(dialog), TRUE);
+    gtk_window_set_skip_taskbar_hint(GTK_WINDOW(dialog), TRUE);
+    gtk_window_set_skip_pager_hint(GTK_WINDOW(dialog), TRUE);
     gtk_widget_show_all(dialog);
     gtk_window_set_keep_above(GTK_WINDOW(dialog), TRUE);
     const int ok = (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT);
@@ -392,67 +408,211 @@ static int copyToClipboard(lua_State *L)
     gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD), str, -1);
 } // copyToClipboard
 
-
-static int makeGuiMenu(lua_State *L)
+static gboolean checkForEscapeKey(GtkWidget *widget, GdkEvent *event, gpointer arg)
 {
-    return retvalPointer(L, gtk_menu_new());
-} // makeGuiMenu
-
-
-static void clickedMenuItem(void *arg)
-{
-    // This is the callback from GTK+; now call into our actual Lua callback!
-    const int callback = (int) ((size_t)arg);
-    lua_rawgeti(luaState, LUA_REGISTRYINDEX, callback);
-    lua_call(luaState, 0, 0);
-} // clickedMenuItem
-
-#if 0  // !!! FIXME: figure out how to fire this.
-static void deletedMenuItem(void *arg)
-{
-    // Clean up the Lua function we referenced in the Registry.
-    const int callback = (int) ((size_t)arg);
-printf("unref callback %d\n", callback);
-    luaL_unref(luaState, LUA_REGISTRYINDEX, callback);
-} // deletedMenuItem
-#endif
-
-static int appendGuiMenuItem(lua_State *L)
-{
-    const int argc = lua_gettop(L);
-    GtkWidget *menu = (GtkWidget *) lua_touserdata(L, 1);
-    const char *label = luaL_checkstring(L, 2);
-    GtkWidget *item = gtk_menu_item_new_with_label(label);
-
-    if ((argc >= 3) && (!lua_isnil(L, 3)))
+    if ((event->type == GDK_KEY_PRESS) && (event->key.keyval == GDK_KEY_Escape))
     {
-        assert(lua_isfunction(L, 3));
-        lua_pushvalue(L, 3);  // copy the Lua callback (luaL_ref() pops it).
-        const int callback = luaL_ref(L, LUA_REGISTRYINDEX);
-        gtk_signal_connect_object(GTK_OBJECT(item), "activate", GTK_SIGNAL_FUNC(clickedMenuItem), (gpointer) ((size_t)callback));
+        // !!! FIXME: this is a little hacky
+        lua_getglobal(luaState, "escapePressed");
+        lua_call(luaState, 0, 0);
+        return TRUE;
     } // if
 
+    return FALSE;  // pass this to other event handlers.
+} // checkForEscapeKey
+
+static gboolean wasSearchDeleteText = FALSE;  // HACK to workaround gtk+ nonsense.
+static void searchChanged(GtkEditable *editable, gpointer arg)
+{
+    const int callback = (int) ((size_t)arg);
+    GtkWidget *vbox = gtk_widget_get_parent(GTK_WIDGET(editable));
+    lua_rawgeti(luaState, LUA_REGISTRYINDEX, callback);
+    lua_pushlightuserdata(luaState, vbox);
+    lua_pushstring(luaState, gtk_entry_get_text(GTK_ENTRY(editable)));
+    lua_call(luaState, 2, 0);
+    gtk_widget_grab_focus(GTK_WIDGET(editable));
+    if (wasSearchDeleteText)  // HACK to workaround gtk+ nonsense.
+    {
+        gtk_editable_set_position(editable, -1);
+        wasSearchDeleteText = FALSE;
+    } // if
+} // searchChanged
+
+// HACK to workaround gtk+ nonsense.
+static void searchDeleteText(GtkEditable *editable, gint start_pos, gint end_pos, gpointer user_data)
+{
+    wasSearchDeleteText = TRUE;
+} // searchDeleteText
+
+static void destroyLuaCallback(const int callback)
+{
+    //printf("unref callback %d\n", callback);
+    luaL_unref(luaState, LUA_REGISTRYINDEX, callback);
+} // destroyLuaCallback
+
+static void destroyCallback(GtkWidget *widget, gpointer arg)
+{
+    destroyLuaCallback((int) ((size_t)arg));
+} // destroyCallback
+
+static void destroyTopLevelMenu(GtkWidget *widget, gpointer arg)
+{
+    // !!! FIXME: hack
+    int *cbs = (int *) arg;
+    lua_rawgeti(luaState, LUA_REGISTRYINDEX, cbs[1]);
+    lua_call(luaState, 0, 0);
+    destroyLuaCallback(cbs[0]);
+    destroyLuaCallback(cbs[1]);
+    free(cbs);
+} // destroyTopLevelMenu
+
+#if 0
+static gboolean
+mappedWindow(GtkWidget *widget, GdkEvent *event, gpointer user_data)
+{
+    GdkEventClient e;
+    memset(&e, '\0', sizeof (e));
+    e.type = GDK_CLIENT_EVENT;
+    e.window = gtk_widget_get_window(widget);
+    e.send_event = 1;
+    e.message_type = gdk_atom_intern_static_string("_NET_ACTIVE_WINDOW");
+    e.data_format = 32;
+    e.data.l[0] = 1;
+    e.data.l[1] = (long) gdk_x11_get_server_time(e.window);
+    e.data.l[2] = 0;
+
+    gdk_window_raise (e.window);
+    gdk_event_send_client_message((GdkEvent *) &e, gdk_x11_drawable_get_xid(gtk_widget_get_root_window(widget)));
+    return TRUE;
+}
+#endif
+
+static int guiCreateTopLevelMenu(lua_State *L)
+{
+    const char *title = luaL_checkstring(L, 1);
+    const int changedCallback = makeLuaCallback(L, 2);
+    const int destroyedCallback = makeLuaCallback(L, 3);
+
+    int *cbs = (int *) malloc(sizeof (int) * 2);  // !!! FIXME: hack
+    cbs[0] = changedCallback;
+    cbs[1] = destroyedCallback;
+
+    GtkWindow *window = GTK_WINDOW(gtk_window_new(GTK_WINDOW_TOPLEVEL));
+    gtk_window_set_keep_above(window, TRUE);
+    gtk_window_set_skip_taskbar_hint(window, TRUE);
+    gtk_window_set_skip_pager_hint(window, TRUE);
+    g_signal_connect(window, "destroy", G_CALLBACK(destroyTopLevelMenu), cbs);
+    gtk_window_set_title(window, title);
+    gtk_window_set_position(window, GTK_WIN_POS_MOUSE);
+    gtk_window_set_decorated(window, FALSE);
+    gtk_window_set_resizable(window, FALSE);
+    GtkEntry *search = GTK_ENTRY(gtk_entry_new());
+    g_signal_connect(search, "key-press-event", G_CALLBACK(checkForEscapeKey), window);
+    gtk_entry_set_text(search, "Search...");
+    g_signal_connect(search, "changed", G_CALLBACK(searchChanged), (gpointer) ((size_t)changedCallback));
+    g_signal_connect(search, "delete-text", G_CALLBACK(searchDeleteText), 0); // HACK to workaround gtk+ nonsense.
+
+//    g_signal_connect(window, "map-event", G_CALLBACK(mappedWindow), NULL);
+
+
+    GtkVBox *vbox = GTK_VBOX(gtk_vbox_new(FALSE, 0));
+    gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(vbox));
+
+    gtk_box_pack_start(GTK_BOX(vbox), GTK_WIDGET(search), FALSE, FALSE, 0);
+    gtk_widget_show(GTK_WIDGET(search));
+
+    GtkWidget *vsep = GTK_WIDGET(gtk_vseparator_new());
+    gtk_box_pack_start(GTK_BOX(vbox), vsep, FALSE, FALSE, 0);
+    gtk_widget_show(vsep);
+
+    return retvalPointer(L, vbox);
+} // guiCreateTopLevelMenu
+
+static void clickedMenuItem(GtkButton *button, gpointer arg)
+{
+    lua_rawgeti(luaState, LUA_REGISTRYINDEX, (int) ((size_t)arg));
+    lua_pushlightuserdata(luaState, button);
+    lua_call(luaState, 1, 0);
+} // clickedMenuItem
+
+static int guiAddMenuItem(lua_State *L)
+{
+    GtkWidget *vbox = (GtkWidget *) lua_touserdata(L, 1);
+    const char *label = luaL_checkstring(L, 2);
+    const int callback = makeLuaCallback(L, 3);
+    GtkWidget *item = GTK_WIDGET(gtk_button_new_with_label(label));
+    g_signal_connect(item, "key-press-event", G_CALLBACK(checkForEscapeKey), NULL);
+    g_signal_connect(item, "clicked", G_CALLBACK(clickedMenuItem), (gpointer) ((size_t)callback));
+    g_signal_connect(item, "destroy", G_CALLBACK(destroyCallback), (gpointer) ((size_t)callback));
+
+    //gtk_button_set_image(button, gtk_image_new_from_stock(GTK_STOCK_OPEN, GTK_ICON_SIZE_MENU));
+    gtk_button_set_alignment (GTK_BUTTON(item), 0.0f, 0.5f);
+    gtk_button_set_relief(GTK_BUTTON(item), GTK_RELIEF_NONE);
+    gtk_box_pack_start(GTK_BOX(vbox), item, FALSE, FALSE, 0);
     gtk_widget_show(item);
-    gtk_menu_append(menu, item);
     return retvalPointer(L, item);
-} // appendGuiMenuItem
+} // guiAddMenuItem
 
-
-static int setGuiMenuItemSubmenu(lua_State *L)
+static int guiRemoveAllMenuItems(lua_State *L)
 {
-    GtkMenuItem *item = (GtkMenuItem *) lua_touserdata(L, 1);
-    GtkWidget *submenu = (GtkWidget *) lua_touserdata(L, 2);
-    gtk_menu_item_set_submenu(item, submenu);
+    GtkWidget *vbox = (GtkWidget *) lua_touserdata(L, 1);
+    GList *children = gtk_container_get_children(GTK_CONTAINER(vbox));
+    GList *iter;
+
+    gtk_widget_hide(vbox);
+    for (iter = children; iter != NULL; iter = g_list_next(iter))
+    {
+        if (G_OBJECT_TYPE(iter->data) == GTK_TYPE_BUTTON)
+             gtk_widget_destroy(GTK_WIDGET(iter->data));
+    } // for
+    g_list_free(children);
+
     return 0;
-} // setGuiMenuItemSubmenu
+} // guiRemoveAllMenuItems
 
-
-static int popupGuiMenu(lua_State *L)
+static int guiDestroyMenu(lua_State *L)
 {
-    GtkMenu *menu = (GtkMenu *) lua_touserdata(L, 1);
-    gtk_menu_popup(menu, NULL, NULL, NULL, NULL, 0, gtk_get_current_event_time());
+    GtkWidget *widget = (GtkWidget *) lua_touserdata(L, 1);
+    gtk_widget_destroy(gtk_widget_get_toplevel(widget));
     return 0;
-} // popupGuiMenu
+} // guiDestroyMenu
+
+static int guiShowWindow(lua_State *L)
+{
+    GtkWidget *widget = (GtkWidget *) lua_touserdata(L, 1);
+    //gtk_container_resize_children(GTK_CONTAINER(vbox));
+    gtk_widget_show(widget);
+    GtkWidget *toplevel = gtk_widget_get_toplevel(widget);
+    gtk_window_present(GTK_WINDOW(toplevel));
+    return 0;
+} // guiShowWindow
+
+static int guiCreateSubMenu(lua_State *L)
+{
+    GtkWidget *widget = (GtkWidget *) lua_touserdata(L, 1);
+    GtkWidget *topwindow = gtk_widget_get_toplevel(widget);
+    GtkWindow *window = GTK_WINDOW(gtk_window_new(GTK_WINDOW_TOPLEVEL));
+    gtk_window_set_keep_above(window, TRUE);
+    gtk_window_set_skip_taskbar_hint(window, TRUE);
+    gtk_window_set_skip_pager_hint(window, TRUE);
+    //g_signal_connect(window, "destroy", G_CALLBACK(destroySubMenu), topwindow);
+    gtk_window_set_decorated(window, FALSE);
+
+    GtkVBox *vbox = GTK_VBOX(gtk_vbox_new(FALSE, 0));
+    gtk_container_add(GTK_CONTAINER(window), GTK_WIDGET(vbox));
+
+    // line the new submenu up...
+    //  !!! FIXME: if overflow off right end of screen, go to the left of (widget) instead.
+    gint basex, basey, x, y;
+    gtk_window_get_position(GTK_WINDOW(topwindow), &basex, &basey);
+    gtk_widget_translate_coordinates(widget, topwindow, 0, 0, &x, &y);
+    x += basex;
+    y += basey;
+    x += widget->allocation.width;
+    gtk_window_move(window, x, y);
+
+    return retvalPointer(L, vbox);
+} // guiCreateSubMenu
 
 
 static int setPowermateLED_Lua(lua_State *L)
@@ -553,14 +713,17 @@ static int initLua(const int argc, char **argv)
     // Set up initial C functions, etc we want to expose to Lua code...
     luaSetCFunc(luaState, decryptUsingPBKDF2, "decryptUsingPBKDF2");
     luaSetCFunc(luaState, decryptBase64UsingKey, "decryptBase64UsingKey");
-    luaSetCFunc(luaState, makeGuiMenu, "makeGuiMenu");
-    luaSetCFunc(luaState, appendGuiMenuItem, "appendGuiMenuItem");
-    luaSetCFunc(luaState, setGuiMenuItemSubmenu, "setGuiMenuItemSubmenu");
-    luaSetCFunc(luaState, popupGuiMenu, "popupGuiMenu");
     luaSetCFunc(luaState, giveControlToGui, "giveControlToGui");
     luaSetCFunc(luaState, runGuiPasswordPrompt, "runGuiPasswordPrompt");
     luaSetCFunc(luaState, copyToClipboard, "copyToClipboard");
     luaSetCFunc(luaState, setPowermateLED_Lua, "setPowermateLED");
+
+    luaSetCFunc(luaState, guiCreateTopLevelMenu, "guiCreateTopLevelMenu");
+    luaSetCFunc(luaState, guiCreateSubMenu, "guiCreateSubMenu");
+    luaSetCFunc(luaState, guiAddMenuItem, "guiAddMenuItem");
+    luaSetCFunc(luaState, guiRemoveAllMenuItems, "guiRemoveAllMenuItems");
+    luaSetCFunc(luaState, guiDestroyMenu, "guiDestroyMenu");
+    luaSetCFunc(luaState, guiShowWindow, "guiShowWindow");
 
     // Set up argv table...
     lua_newtable(luaState);
