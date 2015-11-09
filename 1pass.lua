@@ -52,7 +52,7 @@ local function load_json(fname)
         return nil
     end
 
-    local str = f:read("*all")
+    local str = f:read("*a")
     f:close()
 
     return load_json_str(str, fname)
@@ -102,7 +102,7 @@ local function getHint()
         return
     end
 
-    local str = "(hint is '" .. f:read("*all") .. "')."
+    local str = "(hint is '" .. f:read("*a") .. "')."
     f:close()
     --print(str)
     return str
@@ -131,6 +131,9 @@ local function setMenuItemSubmenu(menuitem, submenu)
     menuitem["submenu"] = submenu
 end
 
+local function setMenuItemChecked(menuitem, ischecked)
+    menuitem["checked"] = ischecked
+end
 
 
 local function build_secret_menuitem(menu, type, str, hidden)
@@ -423,7 +426,7 @@ local function buildGuiMenuItem(guimenu, item)
             return spawnSubMenu(button, submenu, depth)
         end
     end
-    guiAddMenuItem(guimenu, item["text"], cb)
+    guiAddMenuItem(guimenu, item["text"], item["checked"], cb)
 end
 
 buildGuiMenuList = function(guimenu, list)
@@ -494,6 +497,71 @@ local function launchGuiMenu(topmenu)
     guiShowWindow(guimenu)
 end
 
+local trustedDisks = {}
+
+local function getTrustedDiskChecksumPath(mntpoint)
+    return mntpoint .. "/1pass.dat"
+end
+
+local function getTrustedDiskChecksum(mntpoint)
+    local f = io.open(getTrustedDiskChecksumPath(mntpoint), "rb")
+    if f == nil then
+        return nil
+    end
+
+    local str = f:read("*a")
+    f:close()
+    return calcSha256(str)
+end
+
+local function choseTrustedDisk(mntpoint)
+    if trustedDisks[mntpoint] ~= nil then
+        trustedDisks[mntpoint] = nil  -- no longer check existing trusted disk.
+    else
+        -- !!! FIXME: probably needs a message box if this fails.
+        local checksum = getTrustedDiskChecksum(mntpoint)
+        -- No checksum file yet? Generate and write out a random string.
+        if checksum == nil then
+            local f = io.open("/dev/urandom", "rb")
+            if f ~= nil then
+                local str = f:read(4096)
+                f:close()
+                if (str ~= nil) and (#str == 4096) then
+                    f = io.open(getTrustedDiskChecksumPath(mntpoint), "wb")
+                    if f ~= nil then
+                        if f:write(str) and f:flush() then
+                            checksum = calcSha256(str)
+                        end
+                        f:close()
+                    end
+                end
+            end
+        end
+        trustedDisks[mntpoint] = checksum
+    end
+
+    -- kill the popup if it exists.
+    -- !!! FIXME: put this in its own function, this is a copy/paste from elsewhere.
+    if (keyhookGuiMenus ~= nil) and (keyhookGuiMenus[1] ~= nil) then
+        guiDestroyMenu(keyhookGuiMenus[1])
+    end
+end
+
+local function buildTrustedDeviceMenu()
+    local menu = makeMenu()
+    local disks = getMountedDisks()  -- this is a C function.
+
+    table.sort(disks, function(a, b) return a < b end)
+    for i,v in ipairs(disks) do
+        local item = appendMenuItem(menu, v, function() choseTrustedDisk(v) end)
+        if trustedDisks[v] ~= nil then
+            setMenuItemChecked(item, true)
+        end
+    end
+
+    return menu
+end
+
 function keyhookPressed()  -- not local! Called from C!
     --print("keyhookPressed: running==" .. tostring(keyhookRunning))
     if keyhookRunning then
@@ -501,6 +569,20 @@ function keyhookPressed()  -- not local! Called from C!
     end
 
     keyhookRunning = true
+
+    local allowaccess = true;
+    for mntpoint,checksum in pairs(trustedDisks) do
+        if getTrustedDiskChecksum(mntpoint) ~= checksum then
+            allowaccess = false
+            break
+        end
+    end
+
+    if not allowaccess then
+        -- !!! FIXME: probably needs a message box if this happens.
+        keyhookRunning = false
+        return
+    end
 
     while password == nil do
         password = runGuiPasswordPrompt(getHint())
@@ -528,11 +610,14 @@ function keyhookPressed()  -- not local! Called from C!
 
     local topmenu = makeMenu()
     local favesmenu = makeMenu()
+    local securitymenu = makeMenu()
     faveitems = {}
 
     setMenuItemSubmenu(appendMenuItem(topmenu, "Favorites"), favesmenu)
+    setMenuItemSubmenu(appendMenuItem(topmenu, "Security"), securitymenu)
 
-    appendMenuItem(topmenu, "Lock keychain", function() lockKeychain() end)
+    appendMenuItem(securitymenu, "Lock keychain now", function() lockKeychain() end)
+    setMenuItemSubmenu(appendMenuItem(securitymenu, "Require trusted device"), buildTrustedDeviceMenu())
 
     for orderi,type in ipairs(passwordTypeOrdering) do
         local bucket = items[type]

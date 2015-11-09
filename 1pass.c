@@ -8,7 +8,7 @@
 #include <unistd.h>
 #include <dirent.h>
 #include <signal.h>
-
+#include <mntent.h>
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
@@ -16,6 +16,7 @@
 #include "aes.h"
 #include "base64.h"
 #include "md5.h"
+#include "sha256.h"
 #include "keyhook.h"
 
 #include <gtk/gtk.h>
@@ -363,6 +364,24 @@ static int decryptBase64UsingKey(lua_State *L)
 } // decryptBase64UsingKey
 
 
+static void calcSha256(const BYTE *buf, const size_t len, BYTE *hash)
+{
+    SHA256_CTX sha256;
+    sha256_init(&sha256);
+    sha256_update(&sha256, buf, len);
+    sha256_final(&sha256, hash);
+} // calcSha256
+
+static int calcSha256_Lua(lua_State *L)
+{
+    size_t len = 0;
+    const char *str = luaL_checklstring(L, 1, &len);
+    BYTE hash[32];
+    calcSha256(str, len, hash);
+    return retvalStringBytes(L, hash, sizeof (hash));
+} // calcSha256_Lua
+
+
 static int runGuiPasswordPrompt(lua_State *L)
 {
     const char *hintstr = lua_tostring(L, 1);
@@ -539,7 +558,18 @@ static int guiAddMenuItem(lua_State *L)
 {
     GtkWidget *vbox = (GtkWidget *) lua_touserdata(L, 1);
     const char *label = luaL_checkstring(L, 2);
-    const int callback = makeLuaCallback(L, 3);
+    const int checked = lua_toboolean(L, 3);
+    const int callback = makeLuaCallback(L, 4);
+
+    if (checked)
+    {
+        // !!! FIXME: this is pretty lousy.
+        const size_t len = strlen(label) + 5;
+        char *buf = (char *) alloca(len);
+        snprintf(buf, len, "[X] %s", label);
+        label = buf;
+    } // if
+
     GtkWidget *item = GTK_WIDGET(gtk_button_new_with_label(label));
     g_signal_connect(item, "key-press-event", G_CALLBACK(checkForEscapeKey), NULL);
     g_signal_connect(item, "clicked", G_CALLBACK(clickedMenuItem), (gpointer) ((size_t)callback));
@@ -662,6 +692,29 @@ static int giveControlToGui(lua_State *L)
 } // giveControlToGui
 
 
+static int getMountedDisks(lua_State *L)
+{
+    lua_newtable(L);
+    int luai = 1;
+
+    FILE *mounts = setmntent("/etc/mtab", "r");
+    if (mounts != NULL)
+    {
+        struct mntent *ent = NULL;
+        while ((ent = getmntent(mounts)) != NULL)
+        {
+            lua_pushinteger(luaState, luai);
+            lua_pushstring(luaState, ent->mnt_dir);
+            lua_settable(luaState, -3);
+            luai++;
+        } // while
+        endmntent(mounts);
+    } // if
+
+    return 1;  // return the table.
+} // getMountedDisks
+
+
 static void *luaAlloc(void *ud, void *ptr, size_t osize, size_t nsize)
 {
     if (nsize == 0)
@@ -717,6 +770,8 @@ static int initLua(const int argc, char **argv)
     luaSetCFunc(luaState, runGuiPasswordPrompt, "runGuiPasswordPrompt");
     luaSetCFunc(luaState, copyToClipboard, "copyToClipboard");
     luaSetCFunc(luaState, setPowermateLED_Lua, "setPowermateLED");
+    luaSetCFunc(luaState, calcSha256_Lua, "calcSha256");
+    luaSetCFunc(luaState, getMountedDisks, "getMountedDisks");
 
     luaSetCFunc(luaState, guiCreateTopLevelMenu, "guiCreateTopLevelMenu");
     luaSetCFunc(luaState, guiCreateSubMenu, "guiCreateSubMenu");
