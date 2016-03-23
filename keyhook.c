@@ -21,9 +21,12 @@ static void keyhookCallback(XPointer priv, XRecordInterceptData *data)
     const xEvent *xev = (const xEvent *) data->data;
     if (data->category == XRecordFromServer)
     {
-        const BYTE keycode = xev->u.u.detail;
         if (xev->u.u.type == KeyPress)
         {
+            const BYTE keycode = xev->u.u.detail;
+
+            //printf("Pressed X11 keycode %u\n", (unsigned int) keycode);
+
             // !!! FIXME: don't hardcode these keycodes.
             if ((keycode == 64) && (keyPressFlags == 0))
                 keyPressFlags++;
