@@ -177,3 +177,41 @@ SHA1Final(uint8_t digest[SHA1_DIGEST_LENGTH], SHA1_CTX *context)
 #endif
 #endif
 }
+
+
+/* https://www.ietf.org/rfc/rfc2104.txt */
+void SHA1Hmac(const uint8_t *key, const uint32_t keylen, const uint8_t *msg, const uint32_t msglen, uint8_t digest[SHA1_DIGEST_LENGTH])
+{
+    SHA1_CTX sha1;
+    uint8_t block[64];  // 512 bits.
+    uint8_t xori[sizeof (block)];
+    uint8_t xoro[sizeof (block)];
+    int i;
+
+    memset(block, '\0', sizeof (block));
+    if (keylen <= sizeof (block)) {
+        memcpy(block, key, keylen);
+    } else {
+        /* SHA-1 the key itself to shrink it down. */
+        SHA1Init(&sha1);
+        SHA1Update(&sha1, key, keylen);
+        SHA1Final(block, &sha1);
+    }
+
+    for (i = 0; i < sizeof (block); i++) {
+        const uint8_t b = block[i];
+        xori[i] = b ^ 0x36;  /* XOR block vs ipad value */
+        xoro[i] = b ^ 0x5C;  /* XOR block vs opad value */
+    }
+
+    SHA1Init(&sha1);
+    SHA1Update(&sha1, xori, sizeof (xori));
+    SHA1Update(&sha1, msg, msglen);
+    SHA1Final(block, &sha1);
+
+    SHA1Init(&sha1);
+    SHA1Update(&sha1, xoro, sizeof (xoro));
+    SHA1Update(&sha1, block, SHA1_DIGEST_LENGTH);
+    SHA1Final(digest, &sha1);
+}
+

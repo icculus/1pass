@@ -25,4 +25,6 @@ void SHA1Transform(uint32_t state[5], const uint8_t buffer[SHA1_BLOCK_LENGTH]);
 void SHA1Update(SHA1_CTX *context, const uint8_t *data, const uint32_t len);
 void SHA1Final(uint8_t digest[SHA1_DIGEST_LENGTH], SHA1_CTX *context);
 
+void SHA1Hmac(const uint8_t *key, const uint32_t keylen, const uint8_t *msg, const uint32_t msglen, uint8_t digest[SHA1_DIGEST_LENGTH]);
+
 #endif /* _SHA1_H_ */
