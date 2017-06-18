@@ -18,6 +18,7 @@
 #include "md5.h"
 #include "sha256.h"
 #include "keyhook.h"
+#include "otp.h"
 
 #include <gtk/gtk.h>
 #include <gdk/gdk.h>
@@ -362,6 +363,15 @@ static int decryptBase64UsingKey(lua_State *L)
     free(dataptr);
     return 1;
 } // decryptBase64UsingKey
+
+
+static int decryptTopt(lua_State *L)
+{
+    const char *base32_secret = luaL_checkstring(L, 1);
+    char otpstr[16];
+    const int rc = totp(base32_secret, otpstr, sizeof (otpstr));
+    return retvalString(L, (rc == -1) ? NULL : otpstr);
+} // decryptTopt
 
 
 static void calcSha256(const BYTE *buf, const size_t len, BYTE *hash)
@@ -766,6 +776,7 @@ static int initLua(const int argc, char **argv)
     // Set up initial C functions, etc we want to expose to Lua code...
     luaSetCFunc(luaState, decryptUsingPBKDF2, "decryptUsingPBKDF2");
     luaSetCFunc(luaState, decryptBase64UsingKey, "decryptBase64UsingKey");
+    luaSetCFunc(luaState, decryptTopt, "decryptTopt");
     luaSetCFunc(luaState, giveControlToGui, "giveControlToGui");
     luaSetCFunc(luaState, runGuiPasswordPrompt, "runGuiPasswordPrompt");
     luaSetCFunc(luaState, copyToClipboard, "copyToClipboard");

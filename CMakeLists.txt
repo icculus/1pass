@@ -82,6 +82,7 @@ add_executable(1pass
     sha1.c
     sha256.c
     base64.c
+    otp.c
     lua/lapi.c
     lua/ldebug.c
     lua/ldo.c

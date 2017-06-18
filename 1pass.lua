@@ -140,7 +140,7 @@ local function setMenuItemChecked(menuitem, ischecked)
 end
 
 
-local function build_secret_menuitem(menu, type, str, hidden)
+local function build_secret_menuitem(menu, type, str, hidden, transform)
     if str == nil then
         return nil
     end
@@ -152,11 +152,55 @@ local function build_secret_menuitem(menu, type, str, hidden)
     local text = type .. " " .. valuestr
 
     local callback = function()
+        if transform ~= nil then
+            str = transform(str)
+        end
         copyToClipboard(str)
         --print("Copied data [" .. str .. "] to clipboard.")
         guiDestroyMenu(keyhookGuiMenus[1])
     end
     return appendMenuItem(menu, text, callback)
+end
+
+local function transform_otp(str)
+    local algorithm, name, argstr = string.match(str, "^otpauth://(.-)/(.-)?(.+)$")
+    if algorithm == nil then algorithm = "" end
+    if algorithm ~= "totp" then
+        print("FIXME: don't know how to handle One Time Passwords using the '" .. algorithm .. "' algorithm!")
+        return "000000"
+    end
+
+    local args = {}
+    while argstr ~= nil and argstr ~= "" do
+        local arg
+        local idx = string.find(argstr, "&")
+        if idx == nil then
+            arg = argstr
+            argstr = nil
+        else
+            arg = string.sub(argstr, 0, idx);
+            argstr = string.sub(argstr, idx + 1);
+        end
+
+        local key, val = string.match(arg, "^(.-)=(.*)$")
+        if (key ~= nil) and (val ~= nil) then
+            args[key] = val
+        end
+    end
+
+    --dumptable("otpauth://" .. algorithm .. "/" .. name, args);
+
+    if args["secret"] == nil then
+        print("FIXME: this One Time Password doesn't seem to have a secret key!")
+        return "000000"
+    end
+
+    local retval = decryptTopt(args["secret"]);
+    if retval == nil then
+        print("FIXME: failed to generate One Time Password; is the secret key bogus?")
+        retval = "000000"
+    end
+    return retval
 end
 
 
@@ -166,6 +210,7 @@ local function build_secret_menuitem_webform(menu, info, secure)
     local addthis = false
     local username = nil
     local password = nil
+    local otp = nil
     local designated_password = nil
     local designated_username = nil
     local email = nil
@@ -199,6 +244,20 @@ local function build_secret_menuitem_webform(menu, info, secure)
         end
     end
 
+    -- this is probably all wrong.
+    if secure.sections ~= nil then
+        for i,v in ipairs(secure.sections) do
+            if v.fields ~= nil then
+                for i2,v2 in ipairs(v.fields) do
+                    if (type(v2.v) == "string") and (string.sub(v2.v, 0, 10) == "otpauth://") then
+                        otp = v2.v
+                        addthis = true
+                    end
+                end
+            end
+        end
+    end
+
     if addthis then
         -- designated fields always win out.
         if (designated_username ~= nil) then
@@ -216,6 +275,7 @@ local function build_secret_menuitem_webform(menu, info, secure)
         build_secret_menuitem(menu, "username", username)
         build_secret_menuitem(menu, "email", email)
         build_secret_menuitem(menu, "password", password, true)
+        build_secret_menuitem(menu, "otp", otp, true, transform_otp)
     end
 end
 secret_menuitem_builders["webforms.WebForm"] = build_secret_menuitem_webform

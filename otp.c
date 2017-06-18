@@ -3,6 +3,7 @@
 #include <string.h>
 #include <time.h>
 #include "sha1.h"
+#include "otp.h"
 
 static int base32_decode(const char *src, const int srclen, uint8_t *dst, const int dstlen)
 {
@@ -56,7 +57,7 @@ static int base32_decode(const char *src, const int srclen, uint8_t *dst, const 
     return retval;
 }
 
-static int totp(const char *base32_secret, char *dst, int dstlen)
+int totp(const char *base32_secret, char *dst, int dstlen)
 {
     uint8_t decoded[64];
     int decodedlen;
@@ -85,22 +86,6 @@ static int totp(const char *base32_secret, char *dst, int dstlen)
     val %= 1000000;  /* make it six digits long. */
 
     snprintf(dst, dstlen, "%06u", (unsigned int) val);
-    return 0;
-}
-
-int main(int argc, char **argv)
-{
-    char result[16];
-    int i;
-    for (i = 1; i < argc; i++) {
-        printf("%s: ", argv[i]);
-        if (totp(argv[i], result, sizeof (result)) == -1) {
-            printf("[FAILED!]");
-        } else {
-            printf("%s (valid for %d more seconds)", result, 30 - ((int) (time(NULL) % 30)));
-        }
-        printf("\n");
-    }
     return 0;
 }
 
