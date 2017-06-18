@@ -48,16 +48,16 @@
 /* Hash a single 512-bit block. This is the core of the algorithm. */
 
 void
-SHA1Transform(u_int32_t state[5], const unsigned char buffer[SHA1_BLOCK_LENGTH])
+SHA1Transform(uint32_t state[5], const uint8_t buffer[SHA1_BLOCK_LENGTH])
 {
-    u_int32_t a, b, c, d, e;
+    uint32_t a, b, c, d, e;
     typedef union {
-        unsigned char c[64];
-        unsigned int l[16];
+        uint8_t c[64];
+        uint32_t l[16];
     } CHAR64LONG16;
     CHAR64LONG16* block;
 #ifdef SHA1HANDSOFF
-    unsigned char workspace[SHA1_BLOCK_LENGTH];
+    uint8_t workspace[SHA1_BLOCK_LENGTH];
 
     block = (CHAR64LONG16 *)workspace;
     memcpy(block, buffer, SHA1_BLOCK_LENGTH);
@@ -122,12 +122,12 @@ SHA1Init(SHA1_CTX *context)
 /* Run your data through this. */
 
 void
-SHA1Update(SHA1_CTX *context, const unsigned char *data, unsigned int len)
+SHA1Update(SHA1_CTX *context, const uint8_t *data, const uint32_t len)
 {
-    unsigned int i;
-    unsigned int j;
+    uint32_t i;
+    uint32_t j;
 
-    j = (u_int32_t)((context->count >> 3) & 63);
+    j = (uint32_t)((context->count >> 3) & 63);
     context->count += (len << 3);
     if ((j + len) > 63) {
         memcpy(&context->buffer[j], data, (i = 64 - j));
@@ -145,24 +145,24 @@ SHA1Update(SHA1_CTX *context, const unsigned char *data, unsigned int len)
 /* Add padding and return the message digest. */
 
 void
-SHA1Final(unsigned char digest[SHA1_DIGEST_LENGTH], SHA1_CTX *context)
+SHA1Final(uint8_t digest[SHA1_DIGEST_LENGTH], SHA1_CTX *context)
 {
     unsigned int i;
-    unsigned char finalcount[8];
+    uint8_t finalcount[8];
 
     for (i = 0; i < 8; i++) {
-        finalcount[i] = (unsigned char)((context->count >>
+        finalcount[i] = (uint8_t)((context->count >>
             ((7 - (i & 7)) * 8)) & 255);  /* Endian independent */
     }
-    SHA1Update(context, (unsigned char *)"\200", 1);
+    SHA1Update(context, (uint8_t *)"\200", 1);
     while ((context->count & 504) != 448) {
-        SHA1Update(context, (unsigned char *)"\0", 1);
+        SHA1Update(context, (uint8_t *)"\0", 1);
     }
     SHA1Update(context, finalcount, 8);  /* Should cause a SHA1Transform() */
 
     if (digest)
         for (i = 0; i < SHA1_DIGEST_LENGTH; i++) {
-            digest[i] = (unsigned char)((context->state[i >> 2] >>
+            digest[i] = (uint8_t)((context->state[i >> 2] >>
                 ((3 - (i & 3)) * 8)) & 255);
       }
     memset(finalcount, '\0', 8);

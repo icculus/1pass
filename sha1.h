@@ -15,14 +15,14 @@
 #include <stdint.h>
 
 typedef struct {
-	u_int32_t	state[5];
-	u_int64_t	count;
-	unsigned char	buffer[SHA1_BLOCK_LENGTH];
+	uint32_t	state[5];
+	uint64_t	count;
+	uint8_t	buffer[SHA1_BLOCK_LENGTH];
 } SHA1_CTX;
   
 void SHA1Init(SHA1_CTX * context);
-void SHA1Transform(u_int32_t state[5], const unsigned char buffer[SHA1_BLOCK_LENGTH]);
-void SHA1Update(SHA1_CTX *context, const unsigned char *data, unsigned int len);
-void SHA1Final(unsigned char digest[SHA1_DIGEST_LENGTH], SHA1_CTX *context);
+void SHA1Transform(uint32_t state[5], const uint8_t buffer[SHA1_BLOCK_LENGTH]);
+void SHA1Update(SHA1_CTX *context, const uint8_t *data, const uint32_t len);
+void SHA1Final(uint8_t digest[SHA1_DIGEST_LENGTH], SHA1_CTX *context);
 
 #endif /* _SHA1_H_ */
