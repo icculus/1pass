@@ -63,7 +63,7 @@ int totp(const char *base32_secret, char *dst, int dstlen)
     int decodedlen;
     uint64_t secs;
     uint8_t timebytes[8];
-    unsigned char digest[SHA1_DIGEST_LENGTH];
+    uint8_t digest[SHA1_DIGEST_LENGTH];
     uint8_t *bytes;
     uint32_t val;
 
@@ -79,7 +79,7 @@ int totp(const char *base32_secret, char *dst, int dstlen)
 
     SHA1Hmac(decoded, decodedlen, timebytes, 8, digest);
 
-    bytes = (uint8_t *) (digest + (digest[SHA1_DIGEST_LENGTH-1] & 0xF));
+    bytes = digest + (digest[SHA1_DIGEST_LENGTH-1] & 0xF);
     val = (((uint32_t) bytes[0]) << 24) | (((uint32_t) bytes[1]) << 16) |
           (((uint32_t) bytes[2]) << 8) | (((uint32_t) bytes[3]));
     val &= 0x7FFFFFFF; /* drop most significant bit. */
