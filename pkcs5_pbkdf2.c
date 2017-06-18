@@ -27,48 +27,6 @@
 #include "sha1.h"
 
 /*
- * HMAC-SHA-1 (from RFC 2202).
- */
-static void
-hmac_sha1(const u_int8_t *text, size_t text_len, const u_int8_t *key,
-    size_t key_len, u_int8_t digest[SHA1_DIGEST_LENGTH])
-{
-	SHA1_CTX ctx;
-	u_int8_t k_pad[SHA1_BLOCK_LENGTH];
-	u_int8_t tk[SHA1_DIGEST_LENGTH];
-	int i;
-
-	if (key_len > SHA1_BLOCK_LENGTH) {
-		SHA1Init(&ctx);
-		SHA1Update(&ctx, key, key_len);
-		SHA1Final(tk, &ctx);
-
-		key = tk;
-		key_len = SHA1_DIGEST_LENGTH;
-	}
-
-	bzero(k_pad, sizeof k_pad);
-	bcopy(key, k_pad, key_len);
-	for (i = 0; i < SHA1_BLOCK_LENGTH; i++)
-		k_pad[i] ^= 0x36;
-
-	SHA1Init(&ctx);
-	SHA1Update(&ctx, k_pad, SHA1_BLOCK_LENGTH);
-	SHA1Update(&ctx, text, text_len);
-	SHA1Final(digest, &ctx);
-
-	bzero(k_pad, sizeof k_pad);
-	bcopy(key, k_pad, key_len);
-	for (i = 0; i < SHA1_BLOCK_LENGTH; i++)
-		k_pad[i] ^= 0x5c;
-
-	SHA1Init(&ctx);
-	SHA1Update(&ctx, k_pad, SHA1_BLOCK_LENGTH);
-	SHA1Update(&ctx, digest, SHA1_DIGEST_LENGTH);
-	SHA1Final(digest, &ctx);
-}
-
-/*
  * Password-Based Key Derivation Function 2 (PKCS #5 v2.0).
  * Code based on IEEE Std 802.11-2007, Annex H.4.2.
  */
@@ -96,11 +54,11 @@ pkcs5_pbkdf2(const char *pass, size_t pass_len, const uint8_t *salt, size_t salt
 		asalt[salt_len + 1] = (count >> 16) & 0xff;
 		asalt[salt_len + 2] = (count >> 8) & 0xff;
 		asalt[salt_len + 3] = count & 0xff;
-		hmac_sha1(asalt, salt_len + 4, (const uint8_t *) pass, pass_len, d1);
+		SHA1Hmac((const uint8_t *) pass, pass_len, asalt, salt_len + 4, d1);
 		memcpy(obuf, d1, sizeof(obuf));
 
 		for (i = 1; i < rounds; i++) {
-			hmac_sha1(d1, sizeof(d1), (const uint8_t *) pass, pass_len, d2);
+			SHA1Hmac((const uint8_t *) pass, pass_len, d1, sizeof(d1), d2);
 			memcpy(d1, d2, sizeof(d1));
 			for (j = 0; j < sizeof(obuf); j++)
 				obuf[j] ^= d1[j];
