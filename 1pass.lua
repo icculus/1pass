@@ -178,7 +178,7 @@ local function transform_otp(str)
             arg = argstr
             argstr = nil
         else
-            arg = string.sub(argstr, 0, idx);
+            arg = string.sub(argstr, 0, idx - 1);
             argstr = string.sub(argstr, idx + 1);
         end
 
