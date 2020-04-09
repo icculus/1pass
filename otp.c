@@ -5,6 +5,16 @@
 #include "sha1.h"
 #include "otp.h"
 
+static uint8_t sanitize_base32_input(const char ch)
+{
+    /* Google Authenticator checks for these values and corrects them,
+       assuming this was a human error */
+    if (ch == '0') return (uint8_t) 'O';
+    else if (ch == '1') return (uint8_t) 'L';
+    else if (ch == '8') return (uint8_t) 'B';
+    return (uint8_t) ch;
+}
+
 static int base32_decode(const char *src, const int srclen, uint8_t *dst, const int dstlen)
 {
     const int len = srclen == -1 ? strlen((const char *) src) : srclen;
@@ -14,7 +24,7 @@ static int base32_decode(const char *src, const int srclen, uint8_t *dst, const 
     int i;
 
     for (i = 0; i < len; i++) {
-        const uint8_t ch = (uint8_t) src[i];
+        const uint8_t ch = sanitize_base32_input(src[i]);
         uint8_t val;
 
         if ((ch >= 'A') && (ch <= 'Z')) {
@@ -46,6 +56,7 @@ static int base32_decode(const char *src, const int srclen, uint8_t *dst, const 
         }
     }
 
+#if 0   // Apparently for Google Authenticator, we just drop extra bits...?
     if (shifter > 0) {
         if (retval > dstlen) {
             return -1;  /* dst too small */
@@ -53,6 +64,7 @@ static int base32_decode(const char *src, const int srclen, uint8_t *dst, const 
         dst[retval] = (uint8_t) (accum & 0xFF);
         retval++;
     }
+#endif
 
     return retval;
 }
